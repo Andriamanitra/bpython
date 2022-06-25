@@ -4,8 +4,22 @@ etc)"""
 from codeop import CommandCompiler
 from typing import Match
 from itertools import tee, islice, chain
-
+import ast
+import string
 from ..lazyre import LazyReCompile
+
+class NodeVisitor(ast.NodeVisitor):
+    def __init__(self):
+        self.exprs = []
+    def visit_Attribute(self, node: ast.Attribute):
+        self.exprs.append(ast.unparse(node))
+    def visit_Name(self, node: ast.Expr):
+        self.exprs.append(ast.unparse(node))
+
+
+class DesugaringException(Exception):
+    pass
+
 
 # TODO specifically catch IndentationErrors instead of any syntax errors
 
@@ -51,3 +65,28 @@ def leading_tabs_to_spaces(s: str) -> str:
 
 def preprocess(s: str, compiler: CommandCompiler) -> str:
     return indent_empty_lines(leading_tabs_to_spaces(s), compiler)
+
+
+def find_first_identifier(source):
+    try:
+        ast_tree = ast.parse(source)
+    except SyntaxError:
+        raise DesugaringException("invalid syntax")
+    nv = NodeVisitor()
+    nv.visit(ast_tree)
+    if len(nv.exprs) < 1:
+        raise DesugaringException("no identifier names in source")
+    return nv.exprs[0]
+
+
+def desugar(source):
+    if source.endswith("??"):
+        try:
+            identifier = find_first_identifier(source.strip().removesuffix("??"))
+            return f'''print({identifier}.__doc__ or "'{identifier}' has no docstring")'''
+        except DesugaringException as exc:
+            return f"print('Unable to find docs ({exc})')"
+    elif source.strip(string.ascii_letters).endswith("!"):
+        left, _, right = source.rpartition("!")
+        source = f"{right}({left})"
+    return source

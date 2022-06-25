@@ -17,6 +17,8 @@ import signal
 
 from curtsies.input import is_main_thread
 
+from bpython.curtsiesfrontend.preprocess import desugar
+
 logger = logging.getLogger(__name__)
 
 
@@ -113,7 +115,7 @@ class CodeRunner:
         assert self.source is None, (
             "you shouldn't load code when some is " "already running"
         )
-        self.source = source
+        self.source = desugar(source)
         self.code_context = None
 
     def _unload_code(self):
