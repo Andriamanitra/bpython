@@ -101,7 +101,7 @@ from .keys import cli_key_dispatch as key_dispatch
 from . import translations
 from .translations import _
 
-from . import repl
+from . import repl, inspection
 from . import args as bpargs
 from .pager import page
 from .args import parse as argsparse
@@ -726,7 +726,7 @@ class CLIRepl(repl.Repl):
 
     def mkargspec(
         self,
-        topline: Any,  # Named tuples don't seem to play nice with mypy
+        topline: inspection.FuncProps,
         in_arg: Union[str, int, None],
         down: bool,
     ) -> int:
@@ -1128,8 +1128,7 @@ class CLIRepl(repl.Repl):
         # curses.raw(True) prevents C-c from causing a SIGINT
         curses.raw(False)
         try:
-            x: bool = repl.Repl.push(self, s, insert_into_history)
-            return x
+            return super().push(s, insert_into_history)
         except SystemExit as e:
             # Avoid a traceback on e.g. quit()
             self.do_exit = True
@@ -1298,7 +1297,7 @@ class CLIRepl(repl.Repl):
         self,
         items: List[str],
         arg_pos: Union[str, int, None],
-        topline: Any = None,  # Named tuples don't play nice with mypy
+        topline: Optional[inspection.FuncProps] = None,
         formatter: Optional[Callable] = None,
         current_item: Union[str, Literal[False]] = None,
     ) -> None:

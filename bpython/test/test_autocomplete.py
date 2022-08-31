@@ -11,7 +11,7 @@ try:
 except ImportError:
     has_jedi = False
 
-from bpython import autocomplete
+from bpython import autocomplete, inspection
 from bpython.line import LinePart
 
 glob_function = "glob.iglob"
@@ -35,7 +35,7 @@ class TestFormatters(unittest.TestCase):
         self.assertEqual(last_part_of_filename("ab.c/e.f.g/"), "e.f.g/")
 
     def test_attribute(self):
-        self.assertEqual(autocomplete.after_last_dot("abc.edf"), "edf")
+        self.assertEqual(autocomplete._after_last_dot("abc.edf"), "edf")
 
 
 def completer(matches):
@@ -324,7 +324,12 @@ class TestMagicMethodCompletion(unittest.TestCase):
         com = autocomplete.MagicMethodCompletion()
         block = "class Something(object)\n    def __"
         self.assertSetEqual(
-            com.matches(10, "    def __", current_block=block),
+            com.matches(
+                10,
+                "    def __",
+                current_block=block,
+                complete_magic_methods=True,
+            ),
             set(autocomplete.MAGIC_METHODS),
         )
 
@@ -418,11 +423,15 @@ class TestParameterNameCompletion(unittest.TestCase):
         def func(apple, apricot, banana, carrot):
             pass
 
-        argspec = list(inspect.getfullargspec(func))
-        argspec = ["func", argspec, False]
+        argspec = inspection.ArgSpec(*inspect.getfullargspec(func))
+        funcspec = inspection.FuncProps("func", argspec, False)
         com = autocomplete.ParameterNameCompletion()
         self.assertSetEqual(
-            com.matches(1, "a", argspec=argspec), {"apple=", "apricot="}
+            com.matches(1, "a", funcprops=funcspec), {"apple=", "apricot="}
         )
-        self.assertSetEqual(com.matches(2, "ba", argspec=argspec), {"banana="})
-        self.assertSetEqual(com.matches(3, "car", argspec=argspec), {"carrot="})
+        self.assertSetEqual(
+            com.matches(2, "ba", funcprops=funcspec), {"banana="}
+        )
+        self.assertSetEqual(
+            com.matches(3, "car", funcprops=funcspec), {"carrot="}
+        )

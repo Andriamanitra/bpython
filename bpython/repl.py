@@ -586,12 +586,11 @@ class Repl(metaclass=abc.ABCMeta):
             return ""
         return "".join(string)
 
-    def get_object(self, name):
+    def get_object(self, name: str) -> Any:
         attributes = name.split(".")
-        obj = eval(attributes.pop(0), self.interp.locals)
+        obj = eval(attributes.pop(0), cast(Dict[str, Any], self.interp.locals))
         while attributes:
-            with inspection.AttrCleaner(obj):
-                obj = getattr(obj, attributes.pop(0))
+            obj = inspection.getattr_safe(obj, attributes.pop(0))
         return obj
 
     @classmethod
@@ -783,7 +782,7 @@ class Repl(metaclass=abc.ABCMeta):
             self.completers,
             cursor_offset=self.cursor_offset,
             line=self.current_line,
-            locals_=self.interp.locals,
+            locals_=cast(Dict[str, Any], self.interp.locals),
             argspec=self.funcprops,
             current_block="\n".join(self.buffer + [self.current_line]),
             complete_magic_methods=self.config.complete_magic_methods,

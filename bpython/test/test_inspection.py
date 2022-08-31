@@ -2,6 +2,8 @@ import inspect
 import os
 import sys
 import unittest
+from collections.abc import Sequence
+from typing import List
 
 from bpython import inspection
 from bpython.test.fodder import encoding_ascii
@@ -77,6 +79,13 @@ class TestInspection(unittest.TestCase):
         self.assertEqual(repr(defaults[0]), "23")
         self.assertEqual(repr(defaults[1]), "'yay'")
 
+    def test_pasekeywordpairs_annotation(self):
+        def spam(eggs: str = "foo, bar"):
+            pass
+
+        defaults = inspection.getfuncprops("spam", spam).argspec.defaults
+        self.assertEqual(repr(defaults[0]), "'foo, bar'")
+
     def test_get_encoding_ascii(self):
         self.assertEqual(inspection.get_encoding(encoding_ascii), "ascii")
         self.assertEqual(inspection.get_encoding(encoding_ascii.foo), "ascii")
@@ -139,6 +148,111 @@ class TestInspection(unittest.TestCase):
         # This check might need an update in the future, but at least numpy >= 1.18 has
         # np.array(object, dtype=None, *, ...).
         self.assertEqual(props.argspec.args, ["object", "dtype"])
+
+    def test_issue_966_freestanding(self):
+        def fun(number, lst=[]):
+            """
+            Return a list of numbers
+
+            Example:
+            ========
+            C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+            """
+            return lst + [number]
+
+        def fun_annotations(number: int, lst: List[int] = []) -> List[int]:
+            """
+            Return a list of numbers
+
+            Example:
+            ========
+            C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+            """
+            return lst + [number]
+
+        props = inspection.getfuncprops("fun", fun)
+        self.assertEqual(props.func, "fun")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+        self.assertEqual(props.argspec.defaults[0], [])
+
+        props = inspection.getfuncprops("fun_annotations", fun_annotations)
+        self.assertEqual(props.func, "fun_annotations")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+        self.assertEqual(props.argspec.defaults[0], [])
+
+    def test_issue_966_class_method(self):
+        class Issue966(Sequence):
+            @classmethod
+            def cmethod(cls, number: int, lst: List[int] = []):
+                """
+                Return a list of numbers
+
+                Example:
+                ========
+                C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+                """
+                return lst + [number]
+
+            @classmethod
+            def bmethod(cls, number, lst):
+                """
+                Return a list of numbers
+
+                Example:
+                ========
+                C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+                """
+                return lst + [number]
+
+        props = inspection.getfuncprops(
+            "bmethod", inspection.getattr_safe(Issue966, "bmethod")
+        )
+        self.assertEqual(props.func, "bmethod")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+
+        props = inspection.getfuncprops(
+            "cmethod", inspection.getattr_safe(Issue966, "cmethod")
+        )
+        self.assertEqual(props.func, "cmethod")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+        self.assertEqual(props.argspec.defaults[0], [])
+
+    def test_issue_966_static_method(self):
+        class Issue966(Sequence):
+            @staticmethod
+            def cmethod(number: int, lst: List[int] = []):
+                """
+                Return a list of numbers
+
+                Example:
+                ========
+                C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+                """
+                return lst + [number]
+
+            @staticmethod
+            def bmethod(number, lst):
+                """
+                Return a list of numbers
+
+                Example:
+                ========
+                C.cmethod(1337, [1, 2]) # => [1, 2, 1337]
+                """
+                return lst + [number]
+
+        props = inspection.getfuncprops(
+            "bmethod", inspection.getattr_safe(Issue966, "bmethod")
+        )
+        self.assertEqual(props.func, "bmethod")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+
+        props = inspection.getfuncprops(
+            "cmethod", inspection.getattr_safe(Issue966, "cmethod")
+        )
+        self.assertEqual(props.func, "cmethod")
+        self.assertEqual(props.argspec.args, ["number", "lst"])
+        self.assertEqual(props.argspec.defaults[0], [])
 
 
 class A:

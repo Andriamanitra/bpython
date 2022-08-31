@@ -582,7 +582,7 @@ class BaseRepl(Repl):
     def schedule_refresh(self, when: float = 0) -> None:
         """Schedule a ScheduledRefreshRequestEvent for when.
 
-        Such a event should interrupt if blockied waiting for keyboard input"""
+        Such a event should interrupt if blocked waiting for keyboard input"""
         if self.reevaluating or self.paste_mode:
             self.fake_refresh_requested = True
         else:
@@ -1005,7 +1005,7 @@ class BaseRepl(Repl):
             """returns true if all characters before cursor are whitespace"""
             return not self.current_line[: self.cursor_offset].strip()
 
-        logger.debug("self.matches_iter.matches:%r", self.matches_iter.matches)
+        logger.debug("self.matches_iter.matches: %r", self.matches_iter.matches)
         if only_whitespace_left_of_cursor():
             front_ws = len(self.current_line[: self.cursor_offset]) - len(
                 self.current_line[: self.cursor_offset].lstrip()

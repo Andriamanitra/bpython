@@ -217,7 +217,7 @@ def find_attribute_with_name(node, name):
 
 def evaluate_current_expression(
     cursor_offset: int, line: str, namespace: Optional[Dict[str, Any]] = None
-):
+) -> Any:
     """
     Return evaluated expression to the right of the dot of current attribute.
 
@@ -226,9 +226,6 @@ def evaluate_current_expression(
     # Builds asts from with increasing numbers of characters back from cursor.
     # Find the biggest valid ast.
     # Once our attribute access is found, return its .value subtree
-
-    if namespace is None:
-        namespace = {}
 
     # in case attribute is blank, e.g. foo.| -> foo.xxx|
     temp_line = line[:cursor_offset] + "xxx" + line[cursor_offset:]

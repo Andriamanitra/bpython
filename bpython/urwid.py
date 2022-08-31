@@ -762,9 +762,13 @@ class URWIDRepl(repl.Repl):
         if self.complete():
             if self.funcprops:
                 # This is mostly just stolen from the cli module.
-                func_name, args, is_bound = self.funcprops
+                func_name = self.funcprops.func
+                args = self.funcprops.argspec.args
+                is_bound = self.funcprops.is_bound_method
                 in_arg = self.arg_pos
-                args, varargs, varkw, defaults = args[:4]
+                varargs = self.funcprops.argspec.varargs
+                varkw = self.funcprops.argspec.varkwargs
+                defaults = self.funcprops.argspec.defaults
                 kwonly = self.funcprops.argspec.kwonly
                 kwonly_defaults = self.funcprops.argspec.kwonly_defaults or {}
                 markup = [("bold name", func_name), ("name", ": (")]
@@ -934,7 +938,7 @@ class URWIDRepl(repl.Repl):
         signal.signal(signal.SIGINT, signal.default_int_handler)
         # Pretty blindly adapted from bpython.cli
         try:
-            return repl.Repl.push(self, s, insert_into_history)
+            return super().push(s, insert_into_history)
         except SystemExit as e:
             self.exit_value = e.args
             raise urwid.ExitMainLoop()
