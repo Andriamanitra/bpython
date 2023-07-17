@@ -25,8 +25,9 @@ import fnmatch
 import importlib.machinery
 import sys
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Set, Generator, Tuple, Sequence, Iterable, Union
+from typing import Optional, Set, Generator, Sequence, Iterable, Union
 
 from .line import (
     current_word,
@@ -47,6 +48,16 @@ LOADERS = (
     ),
 )
 
+_LOADED_INODE_DATACLASS_ARGS = {"frozen": True}
+if sys.version_info[:2] >= (3, 10):
+    _LOADED_INODE_DATACLASS_ARGS["slots"] = True
+
+
+@dataclass(**_LOADED_INODE_DATACLASS_ARGS)
+class _LoadedInode:
+    dev: int
+    inode: int
+
 
 class ModuleGatherer:
     def __init__(
@@ -60,7 +71,7 @@ class ModuleGatherer:
         # Cached list of all known modules
         self.modules: Set[str] = set()
         # Set of (st_dev, st_ino) to compare against so that paths are not repeated
-        self.paths: Set[Tuple[int, int]] = set()
+        self.paths: Set[_LoadedInode] = set()
         # Patterns to skip
         self.skiplist: Sequence[str] = (
             skiplist if skiplist is not None else tuple()
@@ -72,7 +83,7 @@ class ModuleGatherer:
             paths = sys.path
 
         self.find_iterator = self.find_all_modules(
-            (Path(p).resolve() if p else Path.cwd() for p in paths)
+            Path(p).resolve() if p else Path.cwd() for p in paths
         )
 
     def module_matches(self, cw: str, prefix: str = "") -> Set[str]:
@@ -109,7 +120,7 @@ class ModuleGatherer:
             matches = {
                 name for name in dir(module) if name.startswith(name_after_dot)
             }
-        module_part, _, _ = cw.rpartition(".")
+        module_part = cw.rpartition(".")[0]
         if module_part:
             matches = {f"{module_part}.{m}" for m in matches}
 
@@ -155,9 +166,7 @@ class ModuleGatherer:
         else:
             return None
 
-    def find_modules(
-        self, path: Path
-    ) -> Generator[Union[str, None], None, None]:
+    def find_modules(self, path: Path) -> Generator[Optional[str], None, None]:
         """Find all modules (and packages) for a given directory."""
         if not path.is_dir():
             # Perhaps a zip file
@@ -166,66 +175,67 @@ class ModuleGatherer:
             # Path is on skiplist
             return
 
-        try:
-            # https://bugs.python.org/issue34541
-            # Once we migrate to Python 3.8, we can change it back to directly iterator over
-            # path.iterdir().
-            children = tuple(path.iterdir())
-        except OSError:
-            # Path is not readable
-            return
-
         finder = importlib.machinery.FileFinder(str(path), *LOADERS)  # type: ignore
-        for p in children:
-            if any(fnmatch.fnmatch(p.name, entry) for entry in self.skiplist):
-                # Path is on skiplist
-                continue
-            elif not any(p.name.endswith(suffix) for suffix in SUFFIXES):
-                # Possibly a package
-                if "." in p.name:
+        try:
+            for p in path.iterdir():
+                if p.name.startswith(".") or p.name == "__pycache__":
+                    # Impossible to import from names starting with . and we can skip __pycache__
                     continue
-            elif p.is_dir():
-                # Unfortunately, CPython just crashes if there is a directory
-                # which ends with a python extension, so work around.
-                continue
-            name = p.name
-            for suffix in SUFFIXES:
-                if name.endswith(suffix):
-                    name = name[: -len(suffix)]
-                    break
-            if name == "badsyntax_pep3120":
-                # Workaround for issue #166
-                continue
-            try:
-                is_package = False
-                with warnings.catch_warnings():
-                    warnings.simplefilter("ignore", ImportWarning)
-                    spec = finder.find_spec(name)
-                    if spec is None:
+                elif any(
+                    fnmatch.fnmatch(p.name, entry) for entry in self.skiplist
+                ):
+                    # Path is on skiplist
+                    continue
+                elif not any(p.name.endswith(suffix) for suffix in SUFFIXES):
+                    # Possibly a package
+                    if "." in p.name:
                         continue
-                    if spec.submodule_search_locations is not None:
-                        pathname = spec.submodule_search_locations[0]
-                        is_package = True
-            except (ImportError, OSError, SyntaxError):
-                continue
-            except UnicodeEncodeError:
-                # Happens with Python 3 when there is a filename in some invalid encoding
-                continue
-            else:
-                if is_package:
-                    path_real = Path(pathname).resolve()
+                elif p.is_dir():
+                    # Unfortunately, CPython just crashes if there is a directory
+                    # which ends with a python extension, so work around.
+                    continue
+                name = p.name
+                for suffix in SUFFIXES:
+                    if name.endswith(suffix):
+                        name = name[: -len(suffix)]
+                        break
+                if name == "badsyntax_pep3120":
+                    # Workaround for issue #166
+                    continue
+
+                package_pathname = None
+                try:
+                    with warnings.catch_warnings():
+                        warnings.simplefilter("ignore", ImportWarning)
+                        spec = finder.find_spec(name)
+                        if spec is None:
+                            continue
+                        if spec.submodule_search_locations is not None:
+                            package_pathname = spec.submodule_search_locations[
+                                0
+                            ]
+                except (ImportError, OSError, SyntaxError, UnicodeEncodeError):
+                    # UnicodeEncodeError happens with Python 3 when there is a filename in some invalid encoding
+                    continue
+
+                if package_pathname is not None:
+                    path_real = Path(package_pathname).resolve()
                     try:
                         stat = path_real.stat()
                     except OSError:
                         continue
-                    if (stat.st_dev, stat.st_ino) not in self.paths:
-                        self.paths.add((stat.st_dev, stat.st_ino))
+                    loaded_inode = _LoadedInode(stat.st_dev, stat.st_ino)
+                    if loaded_inode not in self.paths:
+                        self.paths.add(loaded_inode)
                         for subname in self.find_modules(path_real):
                             if subname is None:
                                 yield None  # take a break to avoid unresponsiveness
                             elif subname != "__init__":
                                 yield f"{name}.{subname}"
                 yield name
+        except OSError:
+            # Path is not readable
+            return
         yield None  # take a break to avoid unresponsiveness
 
     def find_all_modules(
@@ -240,9 +250,9 @@ class ModuleGatherer:
                     self.modules.add(module)
                 yield
 
-    def find_coroutine(self) -> Optional[bool]:
+    def find_coroutine(self) -> bool:
         if self.fully_loaded:
-            return None
+            return False
 
         try:
             next(self.find_iterator)

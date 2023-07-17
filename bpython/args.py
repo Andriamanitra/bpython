@@ -30,18 +30,13 @@ Module to handle command line argument parsing, for all front-ends.
 """
 
 import argparse
-from typing import Tuple, List, Optional, NoReturn, Callable
 import code
-import curtsies
-import cwcwidth
-import greenlet
 import importlib.util
 import logging
 import os
-import pygments
-import requests
 import sys
 from pathlib import Path
+from typing import Tuple, List, Optional, NoReturn, Callable
 
 from . import __version__, __copyright__
 from .config import default_config_path, Config
@@ -204,13 +199,48 @@ def parse(
         bpython_logger.addHandler(logging.NullHandler())
         curtsies_logger.addHandler(logging.NullHandler())
 
+    import cwcwidth
+    import greenlet
+    import pygments
+    import requests
+    import xdg
+
     logger.info("Starting bpython %s", __version__)
     logger.info("Python %s: %s", sys.executable, sys.version_info)
-    logger.info("curtsies: %s", curtsies.__version__)
+    # versions of required dependencies
+    try:
+        import curtsies
+
+        logger.info("curtsies: %s", curtsies.__version__)
+    except ImportError:
+        # may happen on Windows
+        logger.info("curtsies: not available")
     logger.info("cwcwidth: %s", cwcwidth.__version__)
     logger.info("greenlet: %s", greenlet.__version__)
     logger.info("pygments: %s", pygments.__version__)  # type: ignore
+    logger.info("pyxdg: %s", xdg.__version__)  # type: ignore
     logger.info("requests: %s", requests.__version__)
+
+    # versions of optional dependencies
+    try:
+        import pyperclip
+
+        logger.info("pyperclip: %s", pyperclip.__version__)  # type: ignore
+    except ImportError:
+        logger.info("pyperclip: not available")
+    try:
+        import jedi
+
+        logger.info("jedi: %s", jedi.__version__)
+    except ImportError:
+        logger.info("jedi: not available")
+    try:
+        import watchdog
+
+        logger.info("watchdog: available")
+    except ImportError:
+        logger.info("watchdog: not available")
+
     logger.info("environment:")
     for key, value in sorted(os.environ.items()):
         if key.startswith("LC") or key.startswith("LANG") or key == "TERM":

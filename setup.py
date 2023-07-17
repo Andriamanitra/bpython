@@ -20,7 +20,7 @@ try:
     from sphinx.setup_command import BuildDoc
 
     # Sphinx 1.5 and newer support Python 3.6
-    using_sphinx = sphinx.__version__ >= "1.5"
+    using_sphinx = sphinx.__version__ >= "1.5" and sphinx.__version__ < "7.0"
 except ImportError:
     using_sphinx = False
 
@@ -124,9 +124,7 @@ with open(version_file, "w") as vf:
 
 cmdclass = {"build": build}
 
-from bpython import package_dir, __author__
-
-translations_dir = os.path.join(package_dir, "translations")
+translations_dir = os.path.join("bpython", "translations")
 
 # localization options
 if using_translations:
@@ -179,8 +177,6 @@ for language in os.listdir(translations_dir):
 
 setup(
     version=version,
-    author=__author__,
-    author_email="robertanthonyfarrell@gmail.com",
     data_files=data_files,
     package_data={
         "bpython": ["sample-config"],

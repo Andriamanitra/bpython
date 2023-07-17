@@ -1,10 +1,13 @@
 Changelog
 =========
 
-0.24
+0.25
 ----
 
 General information:
+
+* The bpython-cli rendering backend has been removed following deprecation in
+  version 0.19.
 
 
 New features:
@@ -16,6 +19,27 @@ Fixes:
 Changes to dependencies:
 
 
+0.24
+----
+
+General information:
+
+* This release is focused on Python 3.11 support.
+
+New features:
+
+* #980: Add more keywords to trigger auto-deindent.
+  Thanks to Eric Burgess
+
+Fixes:
+
+* Improve inspection of builtin functions.
+
+Changes to dependencies:
+
+* wheel is no required as part of pyproject.toml's build dependencies
+
+Support for Python 3.11 has been added.
 
 0.23
 ----
@@ -23,7 +47,6 @@ Changes to dependencies:
 General information:
 
 * More and more type annotations have been added to the bpython code base.
-* Some work has been performed to stop relying on blessings.
 
 New features:
 

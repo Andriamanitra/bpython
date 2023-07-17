@@ -17,7 +17,7 @@ the time of day.
 Getting your development environment set up
 -------------------------------------------
 
-bpython supports Python 3.7 and newer. The code is compatible with all
+bpython supports Python 3.8 and newer. The code is compatible with all
 supported versions.
 
 Using a virtual environment is probably a good idea. Create a virtual
@@ -30,7 +30,10 @@ environment with
     # necessary every time you work on bpython
     $ source bpython-dev/bin/activate
 
-Fork bpython in the GitHub web interface, then clone the repo:
+Fork bpython in the GitHub web interface. Be sure to include the tags
+in your fork by un-selecting the option to copy only the main branch.
+
+Then, clone the forked repo:
 
 .. code-block:: bash
 

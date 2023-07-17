@@ -26,9 +26,17 @@ import keyword
 import pydoc
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Type, Dict, List, ContextManager
+from typing import (
+    Any,
+    Callable,
+    Optional,
+    Type,
+    Dict,
+    List,
+    ContextManager,
+    Literal,
+)
 from types import MemberDescriptorType, TracebackType
-from ._typing_compat import Literal
 
 from pygments.token import Token
 from pygments.lexers import Python3Lexer
@@ -36,14 +44,30 @@ from pygments.lexers import Python3Lexer
 from .lazyre import LazyReCompile
 
 
+class _Repr:
+    """
+    Helper for `ArgSpec`: Returns the given value in `__repr__()`.
+    """
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: str) -> None:
+        self.value = value
+
+    def __repr__(self) -> str:
+        return self.value
+
+    __str__ = __repr__
+
+
 @dataclass
 class ArgSpec:
     args: List[str]
     varargs: Optional[str]
     varkwargs: Optional[str]
-    defaults: Optional[List[Any]]
+    defaults: Optional[List[_Repr]]
     kwonly: List[str]
-    kwonly_defaults: Optional[Dict[str, Any]]
+    kwonly_defaults: Optional[Dict[str, _Repr]]
     annotations: Optional[Dict[str, Any]]
 
 
@@ -110,20 +134,6 @@ class AttrCleaner(ContextManager[None]):
         return False
 
 
-class _Repr:
-    """
-    Helper for `fixlongargs()`: Returns the given value in `__repr__()`.
-    """
-
-    def __init__(self, value: str) -> None:
-        self.value = value
-
-    def __repr__(self) -> str:
-        return self.value
-
-    __str__ = __repr__
-
-
 def parsekeywordpairs(signature: str) -> Dict[str, str]:
     preamble = True
     stack = []
@@ -142,19 +152,19 @@ def parsekeywordpairs(signature: str) -> Dict[str, str]:
                 parendepth += 1
             elif value in ")}]":
                 parendepth -= 1
-            elif value == ":" and parendepth == -1:
-                # End of signature reached
-                break
-            elif value == ":" and parendepth == 0:
-                # Start of type annotation
-                annotation = True
+            elif value == ":":
+                if parendepth == -1:
+                    # End of signature reached
+                    break
+                elif parendepth == 0:
+                    # Start of type annotation
+                    annotation = True
 
-            if (value == "," and parendepth == 0) or (
-                value == ")" and parendepth == -1
-            ):
+            if (value, parendepth) in ((",", 0), (")", -1)):
+                # End of current argument
                 stack.append(substack)
                 substack = []
-                # If type annotation didn't end before, ti does now.
+                # If type annotation didn't end before, it does now.
                 annotation = False
                 continue
         elif token is Token.Operator and value == "=" and parendepth == 0:
@@ -167,31 +177,45 @@ def parsekeywordpairs(signature: str) -> Dict[str, str]:
     return {item[0]: "".join(item[2:]) for item in stack if len(item) >= 3}
 
 
-def _fixlongargs(f: Callable, argspec: ArgSpec) -> ArgSpec:
+def _fix_default_values(f: Callable, argspec: ArgSpec) -> ArgSpec:
     """Functions taking default arguments that are references to other objects
-    whose str() is too big will cause breakage, so we swap out the object
-    itself with the name it was referenced with in the source by parsing the
-    source itself !"""
-    if argspec.defaults is None:
+    will cause breakage, so we swap out the object itself with the name it was
+    referenced with in the source by parsing the source itself!"""
+
+    if argspec.defaults is None and argspec.kwonly_defaults is None:
         # No keyword args, no need to do anything
         return argspec
-    values = list(argspec.defaults)
-    if not values:
-        return argspec
-    keys = argspec.args[-len(values) :]
+
     try:
-        src = inspect.getsourcelines(f)
+        src, _ = inspect.getsourcelines(f)
     except (OSError, IndexError):
         # IndexError is raised in inspect.findsource(), can happen in
         # some situations. See issue #94.
         return argspec
-    kwparsed = parsekeywordpairs("".join(src[0]))
+    except TypeError:
+        # No source code is available, so replace the default values with what we have.
+        if argspec.defaults is not None:
+            argspec.defaults = [_Repr(str(value)) for value in argspec.defaults]
+        if argspec.kwonly_defaults is not None:
+            argspec.kwonly_defaults = {
+                key: _Repr(str(value))
+                for key, value in argspec.kwonly_defaults.items()
+            }
+        return argspec
 
-    for i, (key, value) in enumerate(zip(keys, values)):
-        if len(repr(value)) != len(kwparsed[key]):
+    kwparsed = parsekeywordpairs("".join(src))
+
+    if argspec.defaults is not None:
+        values = list(argspec.defaults)
+        keys = argspec.args[-len(values) :]
+        for i, key in enumerate(keys):
             values[i] = _Repr(kwparsed[key])
 
-    argspec.defaults = values
+        argspec.defaults = values
+    if argspec.kwonly_defaults is not None:
+        for key in argspec.kwonly_defaults.keys():
+            argspec.kwonly_defaults[key] = _Repr(kwparsed[key])
+
     return argspec
 
 
@@ -232,11 +256,11 @@ def _getpydocspec(f: Callable) -> Optional[ArgSpec]:
             if varargs is not None:
                 kwonly_args.append(arg)
                 if default:
-                    kwonly_defaults[arg] = default
+                    kwonly_defaults[arg] = _Repr(default)
             else:
                 args.append(arg)
                 if default:
-                    defaults.append(default)
+                    defaults.append(_Repr(default))
 
     return ArgSpec(
         args, varargs, varkwargs, defaults, kwonly_args, kwonly_defaults, None
@@ -265,7 +289,9 @@ def getfuncprops(func: str, f: Callable) -> Optional[FuncProps]:
         return None
     try:
         argspec = _get_argspec_from_signature(f)
-        fprops = FuncProps(func, _fixlongargs(f, argspec), is_bound_method)
+        fprops = FuncProps(
+            func, _fix_default_values(f, argspec), is_bound_method
+        )
     except (TypeError, KeyError, ValueError):
         argspec_pydoc = _getpydocspec(f)
         if argspec_pydoc is None:
@@ -293,12 +319,15 @@ def _get_argspec_from_signature(f: Callable) -> ArgSpec:
 
     """
     args = []
-    varargs = varkwargs = None
+    varargs = None
+    varkwargs = None
     defaults = []
     kwonly = []
     kwonly_defaults = {}
     annotations = {}
 
+    # We use signature here instead of getfullargspec as the latter also returns
+    # self and cls (for class methods).
     signature = inspect.signature(f)
     for parameter in signature.parameters.values():
         if parameter.annotation is not parameter.empty:
